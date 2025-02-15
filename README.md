@@ -217,7 +217,7 @@ def custom_bbox_similarity(box1, box2, img_size=640):
     ss = 1 - torch.abs(area1.unsqueeze(1) - area2) / torch.max(area1.unsqueeze(1), area2)
 
     # Weighted Combination
-    similarity = 0.3 * iou + 0.4 * ars + 0.2 * ca + 0.1 * ss
+    similarity = 0.5 * iou + 0.2 * ars + 0.2 * ca + 0.1 * ss
     return similarity
 ```
 ### Then made following changes in the metrics.py in the yolov5 
