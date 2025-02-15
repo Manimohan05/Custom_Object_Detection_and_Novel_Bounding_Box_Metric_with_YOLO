@@ -95,13 +95,15 @@ dataset = version.download("yolov5")
 
 - You may get the some other datasets from kaggle, roboflow, custom datasets.But make sure the file format as below
 ```
- ├── data/
- │   ├── images/
- │   │   ├── train/
- │   │   ├── val/
- │   ├── labels/
- │   │   ├── train/
- │   │   ├── val/
+/dataset
+├── images
+│   ├── train (training images)
+│   ├── val (validation images)
+├── labels
+│   ├── train (training labels)
+│   ├── val (validation labels)
+├── data.yaml  # Defines dataset paths
+
 ```
                 
 ### Setup the data.yaml file with the correct dataset path (after the download)
@@ -135,9 +137,6 @@ S = IoU + e^(-d/50) + (1 - |AR1 - AR2| / max(AR1, AR2))^3
 
 - Then wrote the functions as follows and save as a file custom_metric.py in side of yolov5 directory
 ```
-import numpy as np
-import torch
-
 def custom_bbox_similarity(box1, box2):
     """
     Compute a custom bounding box similarity score.
@@ -187,80 +186,104 @@ from custom_metric import custom_bbox_similarity
 
 - Find this section in val.py:
 ```
-if nl:
-    tbox = xywh2xyxy(labels[:, 1:5])  # Convert ground truth from xywh to xyxy
-    scale_boxes(im[si].shape[1:], tbox, shape, shapes[si][1])  # Resize to native resolution
-    labelsn = torch.cat((labels[:, 0:1], tbox), 1)  # Combine class labels with bounding boxes
+    # Metrics
+        for si, pred in enumerate(preds):
+            labels = targets[targets[:, 0] == si, 1:]
+            nl, npr = labels.shape[0], pred.shape[0]  # number of labels, predictions
+            path, shape = Path(paths[si]), shapes[si][0]
+            correct = torch.zeros(npr, niou, dtype=torch.bool, device=device)  # init
+            seen += 1
 
-    correct = process_batch(predn, labelsn, iouv)  # Standard IoU-based correctness
+            if npr == 0:
+                if nl:
+                    stats.append((correct, *torch.zeros((2, 0), device=device), labels[:, 0]))
+                    if plots:
+                        confusion_matrix.process_batch(detections=None, labels=labels[:, 0])
+                continue
+
+            # Predictions
+            if single_cls:
+                pred[:, 5] = 0
+            predn = pred.clone()
+            scale_boxes(im[si].shape[1:], predn[:, :4], shape, shapes[si][1])  # native-space pred
+
+            # Evaluate
+            if nl:
+                tbox = xywh2xyxy(labels[:, 1:5])  # target boxes
+                scale_boxes(im[si].shape[1:], tbox, shape, shapes[si][1])  # native-space labels
+                labelsn = torch.cat((labels[:, 0:1], tbox), 1)  # native-space labels
+                correct = process_batch(predn, labelsn, iouv)
+                if plots:
+                    confusion_matrix.process_batch(predn, labelsn)
+            stats.append((correct, pred[:, 4], pred[:, 5], labels[:, 0]))  # (correct, conf, pcls, tcls)
+
+            # Save/log
+            if save_txt:
+                (save_dir / "labels").mkdir(parents=True, exist_ok=True)
+                save_one_txt(predn, save_conf, shape, file=save_dir / "labels" / f"{path.stem}.txt")
+            if save_json:
+                save_one_json(predn, jdict, path, class_map)  # append to COCO-JSON dictionary
+            callbacks.run("on_val_image_end", pred, predn, path, names, im[si])
+
 ```
 - Modify it to compute our custom metric:
 ```
-if nl:
-    tbox = xywh2xyxy(labels[:, 1:5])  # Convert target labels to xyxy
-    scale_boxes(im[si].shape[1:], tbox, shape, shapes[si][1])  # Resize labels to match predictions
-    labelsn = torch.cat((labels[:, 0:1], tbox), 1)  # Combine class labels with bounding boxes
 
-    correct = process_batch(predn, labelsn, iouv)  # Standard IoU correctness
+# Metrics
+for si, pred in enumerate(preds):
+    labels = targets[targets[:, 0] == si, 1:]
+    nl, npr = labels.shape[0], pred.shape[0]  # number of labels, predictions
+    path, shape = Path(paths[si]), shapes[si][0]
+    correct = torch.zeros(npr, niou, dtype=torch.bool, device=device)  # init
+    seen += 1
 
-    # Compute custom metric for each prediction
-    custom_scores = []
-    for pred_box in predn[:, :4]:  # Loop over predicted boxes
-        best_score = 0
-        for gt_box in tbox:  # Loop over ground truth boxes
-            score = custom_bbox_similarity(pred_box.cpu().numpy(), gt_box.cpu().numpy())
-            best_score = max(best_score, score)  # Take the best match
-        custom_scores.append(best_score)
+    if npr == 0:
+        if nl:
+            stats.append((correct, *torch.zeros((2, 0), device=device), labels[:, 0], torch.tensor([])))
+            if plots:
+                confusion_matrix.process_batch(detections=None, labels=labels[:, 0])
+        continue
 
-    mean_custom_score = sum(custom_scores) / len(custom_scores) if custom_scores else 0
-    print(f'Custom Metric (Avg Similarity Score) for batch {si}: {mean_custom_score:.4f}')
-```
+    # Predictions
+    if single_cls:
+        pred[:, 5] = 0
+    predn = pred.clone()
+    scale_boxes(im[si].shape[1:], predn[:, :4], shape, shapes[si][1])  # native-space pred
 
+    # Evaluate
+    custom_scores = []  # Store our custom similarity scores
+    if nl:
+        tbox = xywh2xyxy(labels[:, 1:5])  # Convert labels to (x1, y1, x2, y2)
+        scale_boxes(im[si].shape[1:], tbox, shape, shapes[si][1])  # Scale to native resolution
+        labelsn = torch.cat((labels[:, 0:1], tbox), 1)  # Concatenate class IDs with boxes
+        correct = process_batch(predn, labelsn, iouv)
 
-- Find this section at the end of val.py where final results are computed:
-```
-# Compute metrics
-stats = [torch.cat(x, 0).cpu().numpy() for x in zip(*stats)]  # Convert to numpy
-if len(stats) and stats[0].any():
-    tp, fp, p, r, f1, ap, ap_class = ap_per_class(*stats, plot=plots, save_dir=save_dir, names=names)
-    ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
-    mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
-```
-- Modify it to add our custom metric:
-```
-# Compute metrics
-stats = [torch.cat(x, 0).cpu().numpy() for x in zip(*stats)]  # Convert to numpy
-if len(stats) and stats[0].any():
-    tp, fp, p, r, f1, ap, ap_class = ap_per_class(*stats, plot=plots, save_dir=save_dir, names=names)
-    ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
-    mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
+        # Compute Custom Metric
+        for pred_box in predn[:, :4]:  # Iterate over predictions
+            best_score = 0
+            for gt_box in tbox:  # Compare with ground truth boxes
+                score = custom_bbox_similarity(pred_box.tolist(), gt_box.tolist())
+                best_score = max(best_score, score)  # Take max similarity for each prediction
+            custom_scores.append(best_score)
 
-    # Compute average custom metric score
-    avg_custom_score = np.mean(custom_scores) if custom_scores else 0
-    print(f'Custom Metric (Average Score across dataset): {avg_custom_score:.4f}')
-```
+        if plots:
+            confusion_matrix.process_batch(predn, labelsn)
 
-- Find this in val.py:
-```
-stats.append((correct, pred[:, 4], pred[:, 5], labels[:, 0]))
-```
-- Modify it to handle empty labels:
-```
-if nl:  # Only append if labels exist
-    target_classes = labels[:, 0] if labels.numel() else torch.zeros(0, device=device)
-    stats.append((correct, pred[:, 4], pred[:, 5], target_classes))
-```
+    # Convert list to tensor and add to stats
+    custom_scores = torch.tensor(custom_scores, device=device) if custom_scores else torch.tensor([], device=device)
+    stats.append((correct, pred[:, 4], pred[:, 5], labels[:, 0], custom_scores))  # Include custom scores
 
-- Prevent the following line 
-```
- np.bincount()
-```
-- replaced with
-```
-if len(stats) >= 4 and stats[3].size > 0:  # Ensure stats[3] is not empty
-    nt = np.bincount(stats[3].astype(int), minlength=nc)
-else:
-    nt = np.zeros(nc, dtype=int)  # Default to zeros if no targets exist
+    # Log similarity score
+    if len(custom_scores) > 0:
+        print(f"Custom BBox Similarity (Batch {batch_i}, Image {si}): {torch.mean(custom_scores):.4f}")
+
+    # Save/log
+    if save_txt:
+        (save_dir / "labels").mkdir(parents=True, exist_ok=True)
+        save_one_txt(predn, save_conf, shape, file=save_dir / "labels" / f"{path.stem}.txt")
+    if save_json:
+        save_one_json(predn, jdict, path, class_map)  # append to COCO-JSON dictionary
+    callbacks.run("on_val_image_end", pred, predn, path, names, im[si])
 ```
 
 
