@@ -50,20 +50,9 @@ Where \(AR_1, AR_2\) are the aspect ratios of box1 and box2, and \(A_1, A_2\) ar
 
 This metric combines these factors to provide a comprehensive similarity score between predicted and ground truth bounding boxes.
 
-### 3. Results
-| Metric | Value |
-|--------|-------|
-| mAP@0.5 |0.759 |
-
-### 4. Observations
-- Our metric provided additional insights beyond IoU.
-- It could be useful in applications where box shape and position matter.
 
 
-
-
-
-## category 1: If you are going to run the code in this repository
+## Category 1: If you are going to run the code in this repository
 
 ### 0. Clone the repo
 ```
@@ -94,7 +83,7 @@ This metric combines these factors to provide a comprehensive similarity score b
 
 ```
 
-## category 2: If you are going to run this from scartch
+## Category 2: If you are going to run this from scartch
 
 ### 1. Setup
 - Install dependencies
