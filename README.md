@@ -7,13 +7,6 @@
 - Trained on a small dataset of cats and dogs.
 
 ### 2. Custom Bounding Box Similarity Metric
-We introduced a new metric considering:
-1. **IoU** (Intersection over Union) : Measures the overlap between two bounding boxes.
-2. **Aspect Ratio Similarity** : Evaluates how similar the aspect ratios (width/height) of two bounding boxes are.
-3. **Center Alignment Similarity**: Quantifies how well the centers of the bounding boxes align.
-4. **Size Similarity**: Assesses how similar the areas of the two bounding boxes are.
-# Custom Bounding Box Similarity Metric
-
 We introduced a new metric considering the following factors:
 
 - **IoU (Intersection over Union)**
@@ -23,37 +16,37 @@ We introduced a new metric considering the following factors:
 
 The custom similarity score is computed as:
 
-\[
+$$
 \text{Similarity} = 0.5 \times \text{IoU} + 0.2 \times \text{ARS} + 0.2 \times \text{CA} + 0.1 \times \text{SS}
-\]
+$$
 
 Where:
 
 - **IoU** (Intersection over Union) is calculated as:
 
-\[
+$$
 \text{IoU} = \frac{\text{Intersection Area}}{\text{Union Area}}
-\]
+$$
 
 - **ARS** (Aspect Ratio Similarity) is calculated as:
 
-\[
+$$
 \text{ARS} = 1 - \frac{|AR_1 - AR_2|}{\max(AR_1, AR_2)}
-\]
+$$
 
 - **CA** (Center Alignment) is calculated as:
 
-\[
+$$
 \text{CA} = 1 - \frac{\| \text{Center1} - \text{Center2} \|}{\text{Image Size}}
-\]
+$$
 
 - **SS** (Size Similarity) is calculated as:
 
-\[
+$$
 \text{SS} = 1 - \frac{|A_1 - A_2|}{\max(A_1, A_2)}
-\]
+$$
 
-Where \(AR_1, AR_2\) are the aspect ratios of box1 and box2, and \(A_1, A_2\) are the areas of box1 and box2, respectively.
+Where \(AR_1, AR_2\) are the aspect ratios of box1 and box2, and \(A_1, A_2\) are the areas of box1(ground truth) and box2(prediction), respectively.
 
 This metric combines these factors to provide a comprehensive similarity score between predicted and ground truth bounding boxes.
 
@@ -224,7 +217,7 @@ def custom_bbox_similarity(box1, box2, img_size=640):
     ss = 1 - torch.abs(area1.unsqueeze(1) - area2) / torch.max(area1.unsqueeze(1), area2)
 
     # Weighted Combination
-    similarity = 0.5 * iou + 0.2 * ars + 0.2 * ca + 0.1 * ss
+    similarity = 0.3 * iou + 0.4 * ars + 0.2 * ca + 0.1 * ss
     return similarity
 ```
 ### Then made following changes in the metrics.py in the yolov5 
