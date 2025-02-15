@@ -152,7 +152,10 @@ class ConfusionMatrix:
         detections = detections[detections[:, 4] > self.conf]
         gt_classes = labels[:, 0].int()
         detection_classes = detections[:, 5].int()
-        iou = box_iou(labels[:, 1:], detections[:, :4])
+        #iou = box_iou(labels[:, 1:], detections[:, :4])
+        #similarity = custom_bbox_similarity(labels[:, 1:], detections[:, :4])
+        iou = custom_bbox_similarity(labels[:, 1:], detections[:, :4])
+
 
         x = torch.where(iou > self.iou_thres)
         if x[0].shape[0]:
@@ -328,6 +331,60 @@ def wh_iou(wh1, wh2, eps=1e-7):
     wh2 = wh2[None]  # [1,M,2]
     inter = torch.min(wh1, wh2).prod(2)  # [N,M]
     return inter / (wh1.prod(2) + wh2.prod(2) - inter + eps)  # iou = inter / (area1 + area2 - inter)
+
+import torch
+
+def custom_bbox_similarity(box1, box2, img_size=640):
+    """
+    Computes a custom bounding box similarity metric based on IoU, aspect ratio similarity,
+    center alignment, and size similarity.
+
+    Args:
+        box1: Tensor of shape (N, 4) - Ground truth bounding boxes [x1, y1, x2, y2]
+        box2: Tensor of shape (M, 4) - Predicted bounding boxes [x1, y1, x2, y2]
+        img_size: (int) Image size (width = height) used for normalization
+
+    Returns:
+        Custom similarity score (0 to 1)
+    """
+    # Compute IoU
+    xA = torch.max(box1[:, 0].unsqueeze(1), box2[:, 0])  # Expand box1's x1 for element-wise comparison
+    yA = torch.max(box1[:, 1].unsqueeze(1), box2[:, 1])  # Expand box1's y1 for element-wise comparison
+    xB = torch.min(box1[:, 2].unsqueeze(1), box2[:, 2])  # Expand box1's x2 for element-wise comparison
+    yB = torch.min(box1[:, 3].unsqueeze(1), box2[:, 3])  # Expand box1's y2 for element-wise comparison
+
+    inter_area = torch.clamp(xB - xA, min=0) * torch.clamp(yB - yA, min=0)
+    box1_area = (box1[:, 2] - box1[:, 0]) * (box1[:, 3] - box1[:, 1])
+    box2_area = (box2[:, 2] - box2[:, 0]) * (box2[:, 3] - box2[:, 1])
+    iou = inter_area / (box1_area.unsqueeze(1) + box2_area - inter_area + 1e-6)
+
+    # Compute Aspect Ratio Similarity (ARS)
+    ar1 = (box1[:, 2] - box1[:, 0]) / (box1[:, 3] - box1[:, 1] + 1e-6)
+    ar2 = (box2[:, 2] - box2[:, 0]) / (box2[:, 3] - box2[:, 1] + 1e-6)
+    ars = 1 - torch.abs(ar1.unsqueeze(1) - ar2) / torch.max(ar1.unsqueeze(1), ar2)
+
+    # Compute Center Alignment (CA)
+    # Calculate center for box1 and box2 (midpoints of (x1, y1) and (x2, y2))
+    center1_x = (box1[:, 0] + box1[:, 2]) / 2
+    center1_y = (box1[:, 1] + box1[:, 3]) / 2
+    center2_x = (box2[:, 0] + box2[:, 2]) / 2
+    center2_y = (box2[:, 1] + box2[:, 3]) / 2
+
+    # Stack to create tensors of shape (N, 2) and (M, 2)
+    center1_tensor = torch.stack((center1_x, center1_y), dim=-1)  # Shape (N, 2)
+    center2_tensor = torch.stack((center2_x, center2_y), dim=-1)  # Shape (M, 2)
+
+    # Ensure the tensors have the same shape before computing the norm
+    ca = 1 - torch.norm(center1_tensor.unsqueeze(1) - center2_tensor, dim=-1) / img_size
+
+    # Compute Size Similarity (SS)
+    area1 = box1_area
+    area2 = box2_area
+    ss = 1 - torch.abs(area1.unsqueeze(1) - area2) / torch.max(area1.unsqueeze(1), area2)
+
+    # Weighted Combination
+    similarity = 0.3 * iou + 0.4 * ars + 0.2 * ca + 0.1 * ss
+    return similarity
 
 
 # Plots ----------------------------------------------------------------------------------------------------------------

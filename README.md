@@ -8,21 +8,59 @@
 
 ### 2. Custom Bounding Box Similarity Metric
 We introduced a new metric considering:
-1. **IoU** (Intersection over Union).
-2. **Aspect Ratio Similarity**.
-3. **Center Alignment Similarity**.
+1. **IoU** (Intersection over Union) : Measures the overlap between two bounding boxes.
+2. **Aspect Ratio Similarity** : Evaluates how similar the aspect ratios (width/height) of two bounding boxes are.
+3. **Center Alignment Similarity**: Quantifies how well the centers of the bounding boxes align.
+4. **Size Similarity**: Assesses how similar the areas of the two bounding boxes are.
+# Custom Bounding Box Similarity Metric
 
-Formula:
+We introduced a new metric considering the following factors:
+
+- **IoU (Intersection over Union)**
+- **Aspect Ratio Similarity**
+- **Center Alignment Similarity**
+- **Size Similarity**
+
+The custom similarity score is computed as:
+
 \[
-S = 0.5 \times IoU + 0.3 \times S_{aspect} + 0.2 \times S_{center}
+\text{Similarity} = 0.5 \times \text{IoU} + 0.2 \times \text{ARS} + 0.2 \times \text{CA} + 0.1 \times \text{SS}
 \]
+
+Where:
+
+- **IoU** (Intersection over Union) is calculated as:
+
+\[
+\text{IoU} = \frac{\text{Intersection Area}}{\text{Union Area}}
+\]
+
+- **ARS** (Aspect Ratio Similarity) is calculated as:
+
+\[
+\text{ARS} = 1 - \frac{|AR_1 - AR_2|}{\max(AR_1, AR_2)}
+\]
+
+- **CA** (Center Alignment) is calculated as:
+
+\[
+\text{CA} = 1 - \frac{\| \text{Center1} - \text{Center2} \|}{\text{Image Size}}
+\]
+
+- **SS** (Size Similarity) is calculated as:
+
+\[
+\text{SS} = 1 - \frac{|A_1 - A_2|}{\max(A_1, A_2)}
+\]
+
+Where \(AR_1, AR_2\) are the aspect ratios of box1 and box2, and \(A_1, A_2\) are the areas of box1 and box2, respectively.
+
+This metric combines these factors to provide a comprehensive similarity score between predicted and ground truth bounding boxes.
 
 ### 3. Results
 | Metric | Value |
 |--------|-------|
-| mAP@0.5 | 0.75 |
-| IoU | 0.68 |
-| Custom Score | 0.72 |
+| mAP@0.5 |0.759 |
 
 ### 4. Observations
 - Our metric provided additional insights beyond IoU.
@@ -137,153 +175,72 @@ S = IoU + e^(-d/50) + (1 - |AR1 - AR2| / max(AR1, AR2))^3
 
 - Then wrote the functions as follows and save as a file custom_metric.py in side of yolov5 directory
 ```
-def custom_bbox_similarity(box1, box2):
+def custom_bbox_similarity(box1, box2, img_size=640):
     """
-    Compute a custom bounding box similarity score.
-    Inputs:
-        - box1, box2: Bounding boxes in [x1, y1, x2, y2] format
+    Computes a custom bounding box similarity metric based on IoU, aspect ratio similarity,
+    center alignment, and size similarity.
+
+    Args:
+        box1: Tensor of shape (N, 4) - Ground truth bounding boxes [x1, y1, x2, y2]
+        box2: Tensor of shape (M, 4) - Predicted bounding boxes [x1, y1, x2, y2]
+        img_size: (int) Image size (width = height) used for normalization
+
     Returns:
-        - similarity score (0 to 1)
+        Custom similarity score (0 to 1)
     """
     # Compute IoU
-    def compute_iou(box1, box2):
-        x1 = max(box1[0], box2[0])
-        y1 = max(box1[1], box2[1])
-        x2 = min(box1[2], box2[2])
-        y2 = min(box1[3], box2[3])
+    xA = torch.max(box1[:, 0].unsqueeze(1), box2[:, 0])  # Expand box1's x1 for element-wise comparison
+    yA = torch.max(box1[:, 1].unsqueeze(1), box2[:, 1])  # Expand box1's y1 for element-wise comparison
+    xB = torch.min(box1[:, 2].unsqueeze(1), box2[:, 2])  # Expand box1's x2 for element-wise comparison
+    yB = torch.min(box1[:, 3].unsqueeze(1), box2[:, 3])  # Expand box1's y2 for element-wise comparison
 
-        intersection = max(0, x2 - x1) * max(0, y2 - y1)
-        area1 = (box1[2] - box1[0]) * (box1[3] - box1[1])
-        area2 = (box2[2] - box2[0]) * (box2[3] - box2[1])
-        union = area1 + area2 - intersection
+    inter_area = torch.clamp(xB - xA, min=0) * torch.clamp(yB - yA, min=0)
+    box1_area = (box1[:, 2] - box1[:, 0]) * (box1[:, 3] - box1[:, 1])
+    box2_area = (box2[:, 2] - box2[:, 0]) * (box2[:, 3] - box2[:, 1])
+    iou = inter_area / (box1_area.unsqueeze(1) + box2_area - inter_area + 1e-6)
 
-        return intersection / union if union > 0 else 0
+    # Compute Aspect Ratio Similarity (ARS)
+    ar1 = (box1[:, 2] - box1[:, 0]) / (box1[:, 3] - box1[:, 1] + 1e-6)
+    ar2 = (box2[:, 2] - box2[:, 0]) / (box2[:, 3] - box2[:, 1] + 1e-6)
+    ars = 1 - torch.abs(ar1.unsqueeze(1) - ar2) / torch.max(ar1.unsqueeze(1), ar2)
 
-    iou = compute_iou(box1, box2)
+    # Compute Center Alignment (CA)
+    # Calculate center for box1 and box2 (midpoints of (x1, y1) and (x2, y2))
+    center1_x = (box1[:, 0] + box1[:, 2]) / 2
+    center1_y = (box1[:, 1] + box1[:, 3]) / 2
+    center2_x = (box2[:, 0] + box2[:, 2]) / 2
+    center2_y = (box2[:, 1] + box2[:, 3]) / 2
 
-    # Compute center distance penalty
-    center1 = [(box1[0] + box1[2]) / 2, (box1[1] + box1[3]) / 2]
-    center2 = [(box2[0] + box2[2]) / 2, (box2[1] + box2[3]) / 2]
-    center_dist = np.linalg.norm(np.array(center1) - np.array(center2))
-    center_penalty = np.exp(-center_dist / 50)  # Normalize by 50 pixels
+    # Stack to create tensors of shape (N, 2) and (M, 2)
+    center1_tensor = torch.stack((center1_x, center1_y), dim=-1)  # Shape (N, 2)
+    center2_tensor = torch.stack((center2_x, center2_y), dim=-1)  # Shape (M, 2)
 
-    # Compute aspect ratio similarity
-    def aspect_ratio(box):
-        return (box[2] - box[0]) / (box[3] - box[1]) if (box[3] - box[1]) > 0 else 1
+    # Ensure the tensors have the same shape before computing the norm
+    ca = 1 - torch.norm(center1_tensor.unsqueeze(1) - center2_tensor, dim=-1) / img_size
 
-    aspect_ratio_similarity = 1 - abs(aspect_ratio(box1) - aspect_ratio(box2)) / max(aspect_ratio(box1), aspect_ratio(box2))
+    # Compute Size Similarity (SS)
+    area1 = box1_area
+    area2 = box2_area
+    ss = 1 - torch.abs(area1.unsqueeze(1) - area2) / torch.max(area1.unsqueeze(1), area2)
 
-    # Weighted combination
-    similarity_score = (iou + center_penalty + aspect_ratio_similarity) / 3
-    return similarity_score
+    # Weighted Combination
+    similarity = 0.5 * iou + 0.2 * ars + 0.2 * ca + 0.1 * ss
+    return similarity
 ```
-### Then made following changes in the val.py in the yolov5 
+### Then made following changes in the metrics.py in the yolov5 
 
-- added the following line 
-```
-from custom_metric import custom_bbox_similarity
-```
+
+
 
 - Find this section in val.py:
 ```
-    # Metrics
-        for si, pred in enumerate(preds):
-            labels = targets[targets[:, 0] == si, 1:]
-            nl, npr = labels.shape[0], pred.shape[0]  # number of labels, predictions
-            path, shape = Path(paths[si]), shapes[si][0]
-            correct = torch.zeros(npr, niou, dtype=torch.bool, device=device)  # init
-            seen += 1
-
-            if npr == 0:
-                if nl:
-                    stats.append((correct, *torch.zeros((2, 0), device=device), labels[:, 0]))
-                    if plots:
-                        confusion_matrix.process_batch(detections=None, labels=labels[:, 0])
-                continue
-
-            # Predictions
-            if single_cls:
-                pred[:, 5] = 0
-            predn = pred.clone()
-            scale_boxes(im[si].shape[1:], predn[:, :4], shape, shapes[si][1])  # native-space pred
-
-            # Evaluate
-            if nl:
-                tbox = xywh2xyxy(labels[:, 1:5])  # target boxes
-                scale_boxes(im[si].shape[1:], tbox, shape, shapes[si][1])  # native-space labels
-                labelsn = torch.cat((labels[:, 0:1], tbox), 1)  # native-space labels
-                correct = process_batch(predn, labelsn, iouv)
-                if plots:
-                    confusion_matrix.process_batch(predn, labelsn)
-            stats.append((correct, pred[:, 4], pred[:, 5], labels[:, 0]))  # (correct, conf, pcls, tcls)
-
-            # Save/log
-            if save_txt:
-                (save_dir / "labels").mkdir(parents=True, exist_ok=True)
-                save_one_txt(predn, save_conf, shape, file=save_dir / "labels" / f"{path.stem}.txt")
-            if save_json:
-                save_one_json(predn, jdict, path, class_map)  # append to COCO-JSON dictionary
-            callbacks.run("on_val_image_end", pred, predn, path, names, im[si])
+iou = box_iou(labels[:, 1:], detections[:, :4])
 
 ```
 - Modify it to compute our custom metric:
 ```
+iou = custom_bbox_similarity(labels[:, 1:], detections[:, :4])
 
-# Metrics
-for si, pred in enumerate(preds):
-    labels = targets[targets[:, 0] == si, 1:]
-    nl, npr = labels.shape[0], pred.shape[0]  # number of labels, predictions
-    path, shape = Path(paths[si]), shapes[si][0]
-    correct = torch.zeros(npr, niou, dtype=torch.bool, device=device)  # init
-    seen += 1
-
-    if npr == 0:
-        if nl:
-            stats.append((correct, *torch.zeros((2, 0), device=device), labels[:, 0], torch.tensor([])))
-            if plots:
-                confusion_matrix.process_batch(detections=None, labels=labels[:, 0])
-        continue
-
-    # Predictions
-    if single_cls:
-        pred[:, 5] = 0
-    predn = pred.clone()
-    scale_boxes(im[si].shape[1:], predn[:, :4], shape, shapes[si][1])  # native-space pred
-
-    # Evaluate
-    custom_scores = []  # Store our custom similarity scores
-    if nl:
-        tbox = xywh2xyxy(labels[:, 1:5])  # Convert labels to (x1, y1, x2, y2)
-        scale_boxes(im[si].shape[1:], tbox, shape, shapes[si][1])  # Scale to native resolution
-        labelsn = torch.cat((labels[:, 0:1], tbox), 1)  # Concatenate class IDs with boxes
-        correct = process_batch(predn, labelsn, iouv)
-
-        # Compute Custom Metric
-        for pred_box in predn[:, :4]:  # Iterate over predictions
-            best_score = 0
-            for gt_box in tbox:  # Compare with ground truth boxes
-                score = custom_bbox_similarity(pred_box.tolist(), gt_box.tolist())
-                best_score = max(best_score, score)  # Take max similarity for each prediction
-            custom_scores.append(best_score)
-
-        if plots:
-            confusion_matrix.process_batch(predn, labelsn)
-
-    # Convert list to tensor and add to stats
-    custom_scores = torch.tensor(custom_scores, device=device) if custom_scores else torch.tensor([], device=device)
-    stats.append((correct, pred[:, 4], pred[:, 5], labels[:, 0], custom_scores))  # Include custom scores
-
-    # Log similarity score
-    if len(custom_scores) > 0:
-        print(f"Custom BBox Similarity (Batch {batch_i}, Image {si}): {torch.mean(custom_scores):.4f}")
-
-    # Save/log
-    if save_txt:
-        (save_dir / "labels").mkdir(parents=True, exist_ok=True)
-        save_one_txt(predn, save_conf, shape, file=save_dir / "labels" / f"{path.stem}.txt")
-    if save_json:
-        save_one_json(predn, jdict, path, class_map)  # append to COCO-JSON dictionary
-    callbacks.run("on_val_image_end", pred, predn, path, names, im[si])
 ```
 
 
@@ -296,9 +253,7 @@ for si, pred in enumerate(preds):
 ## 3. Results
 | Metric | Value |
 |--------|-------|
-| mAP@0.5 | 0.75 |
-| IoU | 0.68 |
-| Custom Score | 0.72 |
+| mAP@0.5 |0.759 |
 
 ## 4. Observations
 - Our metric provided additional insights beyond IoU.
