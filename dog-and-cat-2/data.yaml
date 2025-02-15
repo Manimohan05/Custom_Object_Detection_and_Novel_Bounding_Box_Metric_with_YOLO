@@ -1,0 +1,13 @@
+names:
+- cat
+- dog
+nc: 2
+roboflow:
+  license: CC BY 4.0
+  project: dog-and-cat-tmn5b
+  url: https://universe.roboflow.com/project-3vvpk/dog-and-cat-tmn5b/dataset/2
+  version: 2
+  workspace: project-3vvpk
+test: ../test/images
+train: F:/Assessment/Custom_Object_Detection_and_Novel_Bounding_Box_Metric_with_YOLO/dog-and-cat-2/train/images
+val: F:/Assessment/Custom_Object_Detection_and_Novel_Bounding_Box_Metric_with_YOLO/dog-and-cat-2/valid/images

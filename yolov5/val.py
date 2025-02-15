@@ -59,6 +59,7 @@ from utils.general import (
 from utils.metrics import ConfusionMatrix, ap_per_class, box_iou
 from utils.plots import output_to_target, plot_images, plot_val_study
 from utils.torch_utils import select_device, smart_inference_mode
+from custom_metric import custom_bbox_similarity
 
 
 def save_one_txt(predn, save_conf, shape, file):
@@ -362,7 +363,8 @@ def run(
 
             if npr == 0:
                 if nl:
-                    stats.append((correct, *torch.zeros((2, 0), device=device), labels[:, 0]))
+                    target_classes = labels[:, 0] if labels.numel() else torch.zeros(0, device=device)
+                    stats.append((correct, pred[:, 4], pred[:, 5], target_classes))
                     if plots:
                         confusion_matrix.process_batch(detections=None, labels=labels[:, 0])
                 continue
@@ -375,13 +377,23 @@ def run(
 
             # Evaluate
             if nl:
-                tbox = xywh2xyxy(labels[:, 1:5])  # target boxes
-                scale_boxes(im[si].shape[1:], tbox, shape, shapes[si][1])  # native-space labels
-                labelsn = torch.cat((labels[:, 0:1], tbox), 1)  # native-space labels
-                correct = process_batch(predn, labelsn, iouv)
-                if plots:
-                    confusion_matrix.process_batch(predn, labelsn)
-            stats.append((correct, pred[:, 4], pred[:, 5], labels[:, 0]))  # (correct, conf, pcls, tcls)
+                tbox = xywh2xyxy(labels[:, 1:5])  # Convert targets from xywh to xyxy
+                scale_boxes(im[si].shape[1:], tbox, shape, shapes[si][1])  # Resize to native resolution
+                labelsn = torch.cat((labels[:, 0:1], tbox), 1)  # Combine class labels with bounding boxes
+
+                correct = process_batch(predn, labelsn, iouv)  # Standard IoU-based correctness
+
+                # Compute custom bounding box similarity
+                custom_scores = []
+                for pred_box in predn[:, :4]:  # Loop over predicted boxes
+                    best_score = 0
+                    for gt_box in tbox:  # Loop over ground truth boxes
+                        score = custom_bbox_similarity(pred_box.cpu().numpy(), gt_box.cpu().numpy())
+                        best_score = max(best_score, score)  # Keep the best match
+                    custom_scores.append(best_score)
+
+                mean_custom_score = sum(custom_scores) / len(custom_scores) if custom_scores else 0
+                print(f'Custom Metric (Avg Similarity Score) for batch {si}: {mean_custom_score:.4f}')
 
             # Save/log
             if save_txt:
@@ -404,7 +416,14 @@ def run(
         tp, fp, p, r, f1, ap, ap_class = ap_per_class(*stats, plot=plots, save_dir=save_dir, names=names)
         ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
         mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
-    nt = np.bincount(stats[3].astype(int), minlength=nc)  # number of targets per class
+
+        # Compute custom metric average
+        avg_custom_score = np.mean(custom_scores) if custom_scores else 0
+        print(f'Custom Metric (Average Score across dataset): {avg_custom_score:.4f}')
+    if len(stats) >= 4 and stats[3].size > 0:  # Ensure stats[3] is not empty
+        nt = np.bincount(stats[3].astype(int), minlength=nc)
+    else:
+        nt = np.zeros(nc, dtype=int)  # Default to zeros if no targets exist
 
     # Print results
     pf = "%22s" + "%11i" * 2 + "%11.3g" * 4  # print format
