@@ -66,17 +66,22 @@ This metric combines these factors to provide a comprehensive similarity score b
 !pip install ultralytics
 ```
 
-- Used YOLOv5 for object detection. 
+- Use YOLOv5 for object detection. 
 ```
 %cd yolov5
 !pip install -r requirements.txt
 ```
-
-- Trained on a small dataset of cats and dogs.
+### 2. Training 
+- Set the path of data.yaml file in the following command
+- You can set the  img size , batch size, and epoches.
+- Train on a small dataset of cats and dogs.
 ```
 !python train.py --img 640 --batch 16 --epochs 50 --data F:/Assessment/Custom_Object_Detection_and_Novel_Bounding_Box_Metric_with_YOLO/dog-and-cat-2/data.yaml --weights yolov5s.pt
 
 ```
+
+### 3. Evaluating 
+- Set the path of data.yaml file in the following command
 - Integrate Metric into Training or Evaluation
 ```
 !python val.py --data F:/Assessment/Custom_Object_Detection_and_Novel_Bounding_Box_Metric_with_YOLO/dog-and-cat-2/data.yaml --weights runs/train/exp/weights/best.pt
@@ -92,13 +97,13 @@ This metric combines these factors to provide a comprehensive similarity score b
 !pip install ultralytics
 ```
 
-- Used YOLOv5 for object detection. 
+- Use YOLOv5 for object detection. 
 ```
 !git clone https://github.com/ultralytics/yolov5.git 
 %cd yolov5
 !pip install -r requirements.txt
 ```
-### Download Dataset 
+### 2. Download Dataset 
 [about ~50–100 images with bounding box annotations is enough for a 
 proof-of-concept. ] 
 
@@ -126,7 +131,7 @@ dataset = version.download("yolov5")
 
 ```
                 
-### Setup the data.yaml file with the correct dataset path (after the download)
+### 3.Setup the data.yaml file with the correct dataset path (after the download)
 - path of data.yaml file will be dog-and-cat-2\data.yaml
 
 - Open data.yaml file and verify the paths (You may get assertion Error, If you got then please go through the path)
@@ -135,7 +140,8 @@ train: ./data/images/train
 val: ./data/images/val
 ```
 
-- Trained on a small dataset of cats and dogs. ( You can set the  img size , batch size, and epoches. and set the file path of data.yaml correctly)
+### 4. Training
+- Train on a small dataset of cats and dogs. ( You can set the  img size , batch size, and epoches. and set the file path of data.yaml correctly)
 
 ```
 
@@ -145,7 +151,7 @@ val: ./data/images/val
 
 
 
-## 2. Custom Bounding Box Similarity Metric
+### 5. Custom Bounding Box Similarity Metric
 We introduced a new metric considering:
 1. **IoU** (Intersection over Union).
 2. **Aspect Ratio Similarity**.
@@ -155,7 +161,7 @@ S = IoU + e^(-d/50) + (1 - |AR1 - AR2| / max(AR1, AR2))^3
 ​- penalizes center distance.
 - Aspect ratio similarity prevents shape mismatches.
 
-- Then wrote the functions as follows and save as a file metrics.py in side of yolov5 directory
+- Then wrote the functions as follows and add that inside of file metrics.py in side of yolov5 directory
 ```
 def custom_bbox_similarity(box1, box2, img_size=640):
     """
@@ -209,11 +215,10 @@ def custom_bbox_similarity(box1, box2, img_size=640):
     similarity = 0.5 * iou + 0.2 * ars + 0.2 * ca + 0.1 * ss
     return similarity
 ```
-### Then made following changes in the metrics.py in the yolov5 
+### 6. Make the following changes in the metrics.py in the yolov5 
 
 
-
-- Find this section in val.py:
+- Find this section in metrics.py:
 ```
 iou = box_iou(labels[:, 1:], detections[:, :4])
 
@@ -226,17 +231,29 @@ iou = custom_bbox_similarity(labels[:, 1:], detections[:, :4])
 
 
 
-## Integrate Metric into Training or Evaluation (before that set the file path of data.yaml correctly)
+### 7. Integrate Metric into Evaluation 
+- Set the path of data.yaml file in the following command
 ```
 !python val.py --data F:/Assessment/Custom_Object_Detection_and_Novel_Bounding_Box_Metric_with_YOLO/dog-and-cat-2/data.yaml --weights runs/train/exp/weights/best.pt
 ```
 
-## 3. Results
+
+## Training Results
 | Metric | Value |
 |--------|-------|
-| mAP@0.5 |0.759 |
+| mAP@0.5|0.82698|
+|--------|-------|
+|   IOU  | 0.701 |
 
-## 4. Observations
+
+## Evaluation Results
+| Metric | Value |
+|--------|-------|
+| mAP@0.5|0.759  |
+|--------|-------|
+|   IOU  | 0.681 |
+
+## Observations
 - Our metric provided additional insights beyond IoU.
 - It could be useful in applications where box shape and position matter.
 
