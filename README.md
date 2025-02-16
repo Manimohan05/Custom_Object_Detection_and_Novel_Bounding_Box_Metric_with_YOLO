@@ -59,6 +59,9 @@ This metric combines these factors to provide a comprehensive similarity score b
 !git clone https://github.com/Manimohan05/Custom_Object_Detection_and_Novel_Bounding_Box_Metric_with_YOLO.git
 ```
 
+- Open the notebook named as Assessment.ipynb.
+- Then, do the folllowing steps
+
 ### 1. Setup
 - Install dependencies
 ```
