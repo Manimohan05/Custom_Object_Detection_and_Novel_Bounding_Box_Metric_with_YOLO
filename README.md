@@ -155,7 +155,7 @@ S = IoU + e^(-d/50) + (1 - |AR1 - AR2| / max(AR1, AR2))^3
 ​- penalizes center distance.
 - Aspect ratio similarity prevents shape mismatches.
 
-- Then wrote the functions as follows and save as a file custom_metric.py in side of yolov5 directory
+- Then wrote the functions as follows and save as a file metrics.py in side of yolov5 directory
 ```
 def custom_bbox_similarity(box1, box2, img_size=640):
     """
@@ -210,7 +210,6 @@ def custom_bbox_similarity(box1, box2, img_size=640):
     return similarity
 ```
 ### Then made following changes in the metrics.py in the yolov5 
-
 
 
 
