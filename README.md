@@ -246,7 +246,6 @@ iou = custom_bbox_similarity(labels[:, 1:], detections[:, :4])
 |--------|-------|
 | mAP@0.5|0.82698|
 |--------|-------|
-|   IOU  | 0.701 |
 
 
 ## Evaluation Results
@@ -254,7 +253,6 @@ iou = custom_bbox_similarity(labels[:, 1:], detections[:, :4])
 |--------|-------|
 | mAP@0.5|0.759  |
 |--------|-------|
-|   IOU  | 0.681 |
 
 ## Observations
 - Our metric provided additional insights beyond IoU.
