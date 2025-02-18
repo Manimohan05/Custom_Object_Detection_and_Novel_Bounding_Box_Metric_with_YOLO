@@ -7,7 +7,7 @@
 - Trained on a small dataset of cats and dogs.
 
 ### 2. Custom Bounding Box Similarity Metric
-We introduced a new metric considering the following factors:
+I introduced a new metric considering the following factors:
 
 - **IoU (Intersection over Union)**
 - **Aspect Ratio Similarity**
